@@ -321,13 +321,13 @@ void kdTreeCPP::rangeQuery(ClusterSetCPP<size_t> &rangeClust,const double *rectM
     //tree once for each rectangle
     clusterSizes=this->rangeCount(rectMin,rectMax,numRanges);
     rangeClust.initWithClusterSizes(clusterSizes,numRanges);
-    delete[] clusterSizes;
     
     for(i=0;i<numRanges;i++) {
         size_t numFound=0;
         
         this->rangeQueryRecur(0,rectMin+i*k,rectMax+i*k,rangeClust[i],numFound,clusterSizes[i]);
     }
+    delete[] clusterSizes;
 }
 
 void kdTreeCPP::rangeQueryRecur(const size_t curNode, const double *rectMin, const double *rectMax, size_t *idxRange, size_t &numFound, const size_t numInRange) const {
