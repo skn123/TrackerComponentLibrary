@@ -764,6 +764,14 @@ function dUT1=interpdUT1(MJDTable,UT1UTCTable,JulDes,isLinear)
 %            leapseconds would otherwise mess up the interpolation right
 %            around the jump.
 %
+%All of the tabulated values are at 0:00 UTC on the day given in the table.
+%Thus, if MJDTable(i)<=JulDes<MJDTable(i+1), then the interpolation for the
+%UT1UTCTable will be correct if we subtract any leapsecond offset from
+%UT1UTCTable(i+1). However, if JulDes>=MJDTable(i+1), then we should add
+%the offset to MJDTable(i) for the interpolation. When four points are used
+%for interpolation, similar ideas apply, but one has to pay attention into
+%which of the four point regions the JulDes falls.
+%
 %July 2026 David F. Crouse, Naval Research Laboratory, Washington D.C.
 
 numPts=length(MJDTable);
@@ -773,8 +781,8 @@ dUT1=zeros(numDates,1);
 for curDate=1:numDates
     JulDesCur=JulDes(curDate);
 
-    %Find the index of the point closest to but not greater than JulDes. There
-    %must be 4 or more points total.
+    %Find the index of the point closest to but not greater than JulDes.
+    %There must be 4 or more points total.
     [~,idxClosest]=binSearch(MJDTable,JulDesCur,1);
     
     if(isLinear)
@@ -796,7 +804,11 @@ for curDate=1:numDates
     
         dt=numLeap(2)-numLeap(1);
         if(dt~=0)
-            UT1UTCTableCur(2)=UT1UTCTableCur(2)-dt;
+            if(JulDes<MJDTableCur(2))
+                UT1UTCTableCur(2)=UT1UTCTableCur(2)-dt;
+            else
+                UT1UTCTableCur(1)=UT1UTCTableCur(1)+dt;
+            end
         end
     
         [~,~,~,dayFrac]=UTC2Cal(JulDes,Constants.MJDOffset,true);
@@ -824,17 +836,61 @@ for curDate=1:numDates
             numLeap(k)=cumLeapSec(year,month,day,dayFrac);
         end
         
-        %If there is a difference in the number of leapseconds, we have to adjust
-        %xpTable for the jump.
-        if(numLeap(2)~=numLeap(1))
-            dt=numLeap(2)-numLeap(1);
-            UT1UTCTableCur(1)=UT1UTCTableCur(1)+dt;
-        elseif(numLeap(3)~=numLeap(2))
-            dt=numLeap(3)-numLeap(2);
-            UT1UTCTableCur(3:4)=UT1UTCTableCur(3:4)-dt;
-        elseif(numLeap(4)~=numLeap(3))
-            dt=numLeap(4)-numLeap(3);
-            UT1UTCTableCur(4)=UT1UTCTableCur(4)-dt;
+        %If there is a difference in the number of leapseconds, we have to
+        %adjust UT1UTCTableCur for the jump. How we adjust it depends
+        %between which of the four points JulDesCur is located.
+        if(JulDesCur<MJDTableCur(2))
+            %JulDesCur is before all of the reference points or between the
+            %first and second points. Any offset is always subtracted.
+            if(numLeap(2)~=numLeap(1))
+                dt=numLeap(2)-numLeap(1);
+                UT1UTCTableCur(2:4)=UT1UTCTableCur(2:4)-dt;
+            elseif(numLeap(3)~=numLeap(2))
+                dt=numLeap(3)-numLeap(2);
+                UT1UTCTableCur(3:4)=UT1UTCTableCur(3:4)-dt;
+            elseif(numLeap(4)~=numLeap(3))
+                dt=numLeap(4)-numLeap(3);
+                UT1UTCTableCur(4)=UT1UTCTableCur(4)-dt;
+            end
+        elseif(JulDesCur>MJDTableCur(4))
+            %The point is above all reference point. Any offset is always
+            %added.
+            if(numLeap(2)~=numLeap(1))
+                dt=numLeap(2)-numLeap(1);
+                UT1UTCTableCur(1)=UT1UTCTableCur(1)+dt;
+            elseif(numLeap(3)~=numLeap(2))
+                dt=numLeap(3)-numLeap(2);
+                UT1UTCTableCur(1:2)=UT1UTCTableCur(1:2)+dt;
+            elseif(numLeap(4)~=numLeap(3))
+                dt=numLeap(4)-numLeap(3);
+                UT1UTCTableCur(1:3)=UT1UTCTableCur(1:3)+dt;
+            end
+        elseif(JulDesCur>=MJDTableCur(3)&&JulDesCur<MJDTableCur(4))
+            %JulDesCur is between the third and fourth points. Offsets
+            %prior to the point 3-4 difference are added.
+            if(numLeap(2)~=numLeap(1))
+                dt=numLeap(2)-numLeap(1);
+                UT1UTCTableCur(1)=UT1UTCTableCur(1)+dt;
+            elseif(numLeap(3)~=numLeap(2))
+                dt=numLeap(3)-numLeap(2);
+                UT1UTCTableCur(1:2)=UT1UTCTableCur(1:2)+dt;
+            elseif(numLeap(4)~=numLeap(3))
+                dt=numLeap(4)-numLeap(3);
+                UT1UTCTableCur(4)=UT1UTCTableCur(4)-dt;
+            end
+        else
+            %JulDesCur is in the central region between the second and the
+            %third points. This should be the case most of the time.
+            if(numLeap(2)~=numLeap(1))
+                dt=numLeap(2)-numLeap(1);
+                UT1UTCTableCur(1)=UT1UTCTableCur(1)+dt;
+            elseif(numLeap(3)~=numLeap(2))
+                dt=numLeap(3)-numLeap(2);
+                UT1UTCTableCur(3:4)=UT1UTCTableCur(3:4)-dt;
+            elseif(numLeap(4)~=numLeap(3))
+                dt=numLeap(4)-numLeap(3);
+                UT1UTCTableCur(4)=UT1UTCTableCur(4)-dt;
+            end
         end
         dUT1=interp1(MJDTableCur,UT1UTCTableCur,JulDesCur,'pchip',NaN);
     end
