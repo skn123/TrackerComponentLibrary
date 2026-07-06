@@ -4,7 +4,7 @@ function [xpyp,dXdY,deltaUTCUT1,deltaTTUT1,LOD]=getEOP(JulUTC1,JulUTC2,EOPPath)
 %        of the range of tabulated values. The data can be read from
 %        ./data/EOP.txt or from another file. Once the data have been
 %        loaded, they do not have to be reloaded for future function calls,
-%        though one can force a reaload. The Earth orientation parameters
+%        though one can force a reload. The Earth orientation parameters
 %        are necessary for high-precision astronomical coordinate
 %        conversions. When the date provided is outside of the range of
 %        tabulated values, then linear interpolation is provided over
@@ -118,7 +118,7 @@ function [xpyp,dXdY,deltaUTCUT1,deltaTTUT1,LOD]=getEOP(JulUTC1,JulUTC2,EOPPath)
     
     if(nargin==1)
         %If only one input is given, then it is just the path and the point
-        %is to load the data and not do anyting else.
+        %is to load the data and not do anything else.
         EOPPath=JulUTC1;
         forceLoad=true;
     elseif(nargin==0)
@@ -206,7 +206,8 @@ function [xpInt,ypInt,UT1UTCInt,dXInt,dYInt,LODInt]=interpEOP(JulTable,xpTable,y
 
     xpInt=interp1(JulTable,xpTable,JulDes,'pchip',NaN);
     ypInt=interp1(JulTable,ypTable,JulDes,'pchip',NaN);
-    UT1UTCInt=interp1(JulTable,UT1UTCTable,JulDes,'pchip',NaN);
+    %We are forced to use a special routine to deal with leapseconds.
+    UT1UTCInt=interpdUT1(JulTable,UT1UTCTable,JulDes,false);
     LODInt=interp1(JulTable,LODTable,JulDes,'pchip');
     
     dXInt=interp1(JulTable,dXTable,JulDes,'pchip',NaN);
@@ -236,8 +237,9 @@ function [xpInt,ypInt,UT1UTCInt,dXInt,dYInt,LODInt]=interpEOP(JulTable,xpTable,y
     dXInt(sel)=0;
     dYInt(sel)=0;
     
-    %Outside of the valid range, use simple linear interpolation for UT1
-    UT1UTCInt(sel)=interp1(JulTable,UT1UTCTable,JulDes(sel),'linear','extrap');
+    %Outside of the valid range, use simple linear interpolation for UT1,
+    %and use a special routine to deal with possible leapseconds.
+    UT1UTCInt(sel)=interpdUT1(JulTable,UT1UTCTable,JulDes(sel),true);
 end
 
 function [cor_x,cor_y,cor_ut1,cor_lod]=PMUT1_OCEANS(rjd)
@@ -245,7 +247,7 @@ function [cor_x,cor_y,cor_ut1,cor_lod]=PMUT1_OCEANS(rjd)
 %IERS 2010 conventions, and has been converted to Matlab.
 %
 %The origin of the lunisolar arguments are from [1] and is what was in
-%interp.f. However, the iers conventions modified some of the terms.
+%interp.f. However, the IERS conventions modified some of the terms.
 %For example, the constant -6962890.2665 in the fundamental argument Omega
 %in [1] has been changed to -6962890.5431. Additionally, a coefficient of 
 %-0.001037 in interp.f disagrees with the value in [1] and in [2]. Thus,
@@ -753,6 +755,89 @@ for curEntry=1:numEntry
     end
     
     baseIdx=returnList(curEntry);
+end
+end
+
+function dUT1=interpdUT1(MJDTable,UT1UTCTable,JulDes,isLinear)
+%%INTERPDUT1 When interpolating UT1-UTC offsets, this function is used
+%            instead of directly calling interp1, because the presence of
+%            leapseconds would otherwise mess up the interpolation right
+%            around the jump.
+%
+%July 2026 David F. Crouse, Naval Research Laboratory, Washington D.C.
+
+numPts=length(MJDTable);
+numDates=length(JulDes);
+dUT1=zeros(numDates,1);
+
+for curDate=1:numDates
+    JulDesCur=JulDes(curDate);
+
+    %Find the index of the point closest to but not greater than JulDes. There
+    %must be 4 or more points total.
+    [~,idxClosest]=binSearch(MJDTable,JulDesCur,1);
+    
+    if(isLinear)
+        if(idxClosest==numPts)
+            idxSpan=[numPts-1,numPts];
+        elseif(idxClosest==1)
+            idxSpan=1:2;
+        else
+            idxSpan=[idxClosest,idxClosest+1];
+        end
+        MJDTableCur=MJDTable(idxSpan);
+        UT1UTCTableCur=UT1UTCTable(idxSpan);
+    
+        numLeap=zeros(2,1);
+        for k=1:2
+            [year,month,day,dayFrac]=UTC2Cal(MJDTableCur(k),Constants.MJDOffset,true);
+            numLeap(k)=cumLeapSec(year,month,day,dayFrac);
+        end
+    
+        dt=numLeap(2)-numLeap(1);
+        if(dt~=0)
+            UT1UTCTableCur(2)=UT1UTCTableCur(2)-dt;
+        end
+    
+        [~,~,~,dayFrac]=UTC2Cal(JulDes,Constants.MJDOffset,true);
+
+        %Linear interpolation.
+        dUT1=UT1UTCTableCur(1)+(UT1UTCTableCur(2)-UT1UTCTableCur(1))*dayFrac;
+    else
+        if(idxClosest>=2&&idxClosest<=numPts-3)
+            %In the central region.
+            idxSpan=(idxClosest-1):(idxClosest+2);
+        elseif(idxClosest<2)
+            %In the beginning region.
+            idxSpan=1:4;
+        else
+            %In the ending region.
+            idxSpan=(numPts-3):numPts;
+        end
+        MJDTableCur=MJDTable(idxSpan);
+        UT1UTCTableCur=UT1UTCTable(idxSpan);
+        
+        %Get the number of leapseconds for each of the four points.
+        numLeap=zeros(4,1);
+        for k=1:4
+            [year,month,day,dayFrac]=UTC2Cal(MJDTableCur(k),Constants.MJDOffset,true);
+            numLeap(k)=cumLeapSec(year,month,day,dayFrac);
+        end
+        
+        %If there is a difference in the number of leapseconds, we have to adjust
+        %xpTable for the jump.
+        if(numLeap(2)~=numLeap(1))
+            dt=numLeap(2)-numLeap(1);
+            UT1UTCTableCur(1)=UT1UTCTableCur(1)+dt;
+        elseif(numLeap(3)~=numLeap(2))
+            dt=numLeap(3)-numLeap(2);
+            UT1UTCTableCur(3:4)=UT1UTCTableCur(3:4)-dt;
+        elseif(numLeap(4)~=numLeap(3))
+            dt=numLeap(4)-numLeap(3);
+            UT1UTCTableCur(4)=UT1UTCTableCur(4)-dt;
+        end
+        dUT1=interp1(MJDTableCur,UT1UTCTableCur,JulDesCur,'pchip',NaN);
+    end
 end
 end
 
