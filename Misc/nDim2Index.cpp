@@ -93,18 +93,6 @@ void mexFunction(const int nlhs, mxArray *plhs[], const int nrhs, const mxArray 
     dims=mxGetDoubles(prhs[0]);
     indicesIn=mxGetDoubles(prhs[1]);
 
-    multIdx=reinterpret_cast<double*>(mxMalloc(numDim1*sizeof(double)));
-    multIdx[0]=1;
-    if(dimIsScalar==true) {
-        for(i=1;i<numDim1;i++) {
-            multIdx[i]=multIdx[i-1]*dims[0];
-        }
-    } else {
-        for(i=1;i<numDim1;i++) {
-            multIdx[i]=multIdx[i-1]*dims[i-1];
-        }
-    }
-
     if(numDim1<numDim) {
         indicesCopy=reinterpret_cast<double*>(mxMalloc(numDim*numIdx*sizeof(double)));
 
@@ -121,6 +109,18 @@ void mexFunction(const int nlhs, mxArray *plhs[], const int nrhs, const mxArray 
         indices=indicesIn;     
     }
     
+    multIdx=reinterpret_cast<double*>(mxMalloc(numDim1*sizeof(double)));
+    multIdx[0]=1;
+    if(dimIsScalar==true) {
+        for(i=1;i<numDim1;i++) {
+            multIdx[i]=multIdx[i-1]*dims[0];
+        }
+    } else {
+        for(i=1;i<numDim1;i++) {
+            multIdx[i]=multIdx[i-1]*dims[i-1];
+        }
+    }
+
     retMat=mxCreateDoubleMatrix(numIdx,1,mxREAL);
     idx=mxGetDoubles(retMat);
     

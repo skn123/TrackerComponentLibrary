@@ -141,16 +141,16 @@ if(nargin>1)%If decimation is to be performed.
     val=DWVDDec(z,N,a,freqSamps);
     
     if(nargout>1)
-        t=((0:(2*N/a-1)))*(1/2);
-        f=freqSamps*(1/(N-1));
+        t=((0:(2*N/a-1)))*((N-1)/(2*N/a-1));
+        f=freqSamps*(1/N);
     end
 else
     %No decimation.
     val=DWVD(z,N);
     if(nargout>1)
-        t=((0:(2*N-1)))*(1/2);
+        t=((0:(2*N-1)))*((N-1)/(2*N-1));
         
-        f=linspace(0,1,N);
+        f=(0:1:(N-1))/N;
     end
 end
 
